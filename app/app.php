@@ -3,13 +3,25 @@
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
+$request = Request::createFromGlobals();
+if ($proxies = $app['config']->get('general/trustProxies')) {
+    $request->setTrustedProxies($proxies);
+}
+
 // Mount the 'backend' on the branding:path setting. Defaults to '/bolt'.
 $app->mount($app['config']->get('general/branding/path'), new Bolt\Controllers\Backend());
 $app->mount('/async', new Bolt\Controllers\Async());
+
+if ($app['config']->get('general/enforce_ssl')) {
+    foreach ($app['routes']->getIterator() as $route) {
+        $route->requireHttps();
+    }
+}
+
+
 $app->mount('', new Bolt\Controllers\Routing());
 
-$app->before(function () use ($app) {
-
+$app->before(function (Request $request) use ($app) {
     $app['twig']->addGlobal('bolt_name', $app['bolt_name']);
     $app['twig']->addGlobal('bolt_version', $app['bolt_version']);
 
@@ -35,7 +47,10 @@ if ($app['debug'] && ($app['session']->has('user') || $app['config']->get('gener
     error_reporting($app['config']->get('general/debug_error_level'));
 
     // Register Whoops, to handle errors for logged in users only.
-    $app->register(new Whoops\Provider\Silex\WhoopsServiceProvider);
+    if ($app['config']->get('general/debug_enable_whoops')) {
+        $app->register(new Whoops\Provider\Silex\WhoopsServiceProvider);
+    }
+
     $app->register(new Silex\Provider\ServiceControllerServiceProvider);
 
     // Register the Silex/Symfony web debug toolbar.
@@ -50,8 +65,19 @@ if ($app['debug'] && ($app['session']->has('user') || $app['config']->get('gener
     // Register the toolbar item for our bolt nipple.
     $app->register(new Bolt\Provider\BoltProfilerServiceProvider());
 
-    $app['twig.loader.filesystem']->addPath(__DIR__ . '/../vendor/symfony/web-profiler-bundle/Symfony/Bundle/WebProfilerBundle/Resources/views', 'WebProfiler');
+    // Register the toolbar item for the Twig toolbar item.
+    $app->register(new Bolt\Provider\TwigProfilerServiceProvider());
+
+    $app['twig.loader.filesystem']->addPath(BOLT_PROJECT_ROOT_DIR . '/vendor/symfony/web-profiler-bundle/Symfony/Bundle/WebProfilerBundle/Resources/views', 'WebProfiler');
     $app['twig.loader.filesystem']->addPath(__DIR__ . '/view', 'BoltProfiler');
+
+    $app->after(function () use ($app) {
+
+        foreach(hackislyParseRegexTemplates($app['twig.loader.filesystem']) as $template) {
+            $app['twig.logger']->collectTemplateData($template);
+        }
+
+    });
 
 } else {
     error_reporting(E_ALL &~ E_NOTICE &~ E_DEPRECATED &~ E_USER_DEPRECATED);
@@ -103,6 +129,17 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
  * Error page.
  */
 $app->error(function (\Exception $e) use ($app) {
+
+    // If we are in maintenance mode and current user is not logged in, show maintenance notice.
+    // @see /app/src/Bolt/Controllers/Frontend.php, Frontend::before()
+    if ($app['config']->get('general/maintenance_mode')) {
+        $user = $app['users']->getCurrentUser();
+        if ($user['userlevel'] < 2) {
+            $template = $app['config']->get('general/maintenance_template');
+            $body = $app['twig']->render($template);
+            return new Response($body, 503);
+        }
+    }
 
     $paths = getPaths($app['config']);
 

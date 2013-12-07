@@ -151,7 +151,7 @@
 {% if field.type == "templateselect" %}
 <label><b><span class='left'>{% if field.label %}{{field.label|trans}}{% else %}{{ key|ucfirst|trans}}{%endif%}</span></b></label>
     <select name="{{key}}" id="{{key}}">
-        <option value="">(default template)</option>
+        <option value="">{{ __('(default template)') }}</option>
         <option value="" disabled>-----------</option>
         {% for filename, name in listtemplates(field.filter) %}
             <option value="{{filename}}" {% if content.get(key)==filename %}selected{% endif %}>{{name}}</option>
@@ -244,7 +244,7 @@
         bindFileUpload('{{key}}');
 
         $("#field-{{key}}").autocomplete({
-            source: "{{ paths.async }}filesautocomplete",
+            source: "{{ paths.async }}filesautocomplete?ext=gif,jpg,jpeg,png",
             minLength: 2,
             close: function(){
                 if ($('#field-{{key}}').val() != "" ) {
@@ -430,26 +430,26 @@
     <div class="video-container">
         <label>
             <b>{% if field.label %}{{field.label|trans}}{% else %}{{ key|ucfirst|trans}}{%endif%}</b>
-            (<span id="video-{{key}}-text">{% if video.title %}"{{ video.title|trimtext(18) }}" by {{ video.authorname|trimtext(18) }}{% endif %}</span>)
+            (<span id="video-{{key}}-text">{% if video.title is defined %}"{{ video.title|trimtext(18) }}" by {{ video.authorname|trimtext(18) }}{% endif %}</span>)
             <span class="label info-pop" data-html="true" data-title="{% if field.label %}{{field.label|trans}}{% else %}{{ key|ucfirst|trans}}{%endif%}"
                   data-content="{{ app.translator.trans('info.upload.video',{},'infos') }}">{{ __('Info') }}</span>
         </label>
         <label>{{ __('URL:') }} <input type="url" name="{{key}}[url]" id="video-{{key}}"
-               value='{{ video.url }}' style='width: 60%;'>
+               value='{{ video.url|default('') }}' style='width: 60%;'>
         </label>
 
-        <label>{{ __('Size:') }} <input type="number" name="{{ key }}[width]" id="video-{{key}}-width" value="{{ video.width }}" style='width: 60px; min-width: 60px;'>
-        x <input type="number" name="{{ key }}[height]" id="video-{{key}}-height" value="{{ video.height }}" style='width: 60px; min-width: 60px;'>
+        <label>{{ __('Size:') }} <input type="number" name="{{ key }}[width]" id="video-{{key}}-width" value="{{ video.width|default('') }}" style='width: 60px; min-width: 60px;'>
+        x <input type="number" name="{{ key }}[height]" id="video-{{key}}-height" value="{{ video.height|default('') }}" style='width: 60px; min-width: 60px;'>
             pixels.
             <span class="hide-tablet"><a href="#myModal" role="button" class="btn" data-toggle="modal" style='float: right;'>{{ __('Preview video') }}</a></span>
         </label>
 
-        <input type="hidden" name="{{ key }}[ratio]" id="video-{{key}}-ratio" value="{{ video.ratio }}">
-        <input type="hidden" name="{{ key }}[title]" id="video-{{key}}-title" value="{{ video.title }}" readonly>
-        <input type="hidden" name="{{ key }}[authorname]" id="video-{{key}}-author_name" value="{{ video.authorname }}" readonly>
-        <input type="hidden" name="{{ key }}[authorurl]" id="video-{{key}}-author_url" value="{{ video.authorurl }}" readonly>
-        <input type="hidden" name="{{ key }}[html]" id="video-{{key}}-html" value="{{ video.html|escape }}">
-        <input type="hidden" name="{{ key }}[thumbnail]" id="video-{{key}}-thumbnail" value="{{ video.thumbnail }}">
+        <input type="hidden" name="{{ key }}[ratio]" id="video-{{key}}-ratio" value="{{ video.ratio|default('') }}">
+        <input type="hidden" name="{{ key }}[title]" id="video-{{key}}-title" value="{{ video.title|default('') }}" readonly>
+        <input type="hidden" name="{{ key }}[authorname]" id="video-{{key}}-author_name" value="{{ video.authorname|default('') }}" readonly>
+        <input type="hidden" name="{{ key }}[authorurl]" id="video-{{key}}-author_url" value="{{ video.authorurl|default('') }}" readonly>
+        <input type="hidden" name="{{ key }}[html]" id="video-{{key}}-html" value="{% if video.html is defined %}{{ video.html|escape }}{% endif %}">
+        <input type="hidden" name="{{ key }}[thumbnail]" id="video-{{key}}-thumbnail" value="{{ video.thumbnail|default('') }}">
 
         <script type="text/javascript">
             bindVideoEmbed('{{key}}');
@@ -461,7 +461,7 @@
 <div class="modal hide" id="myModal" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
 
     <div class="modal-body">
-        {% if video.html %}
+        {% if video.html is defined %}
         {{ video.html }}
         {% else %}
         <p>{{ __('No video url is set, no video to show.') }}</p>
@@ -488,9 +488,7 @@
 
             <div class="map-right hide-phone">
                 <div class='mapholder' id="map-{{key}}" style="width: 200px;">
-                    {% if geo.map!="" %}
-                        <img src="{{ geo.map }}" width="200" height="200">
-                    {% endif %}
+                        <img src="{{ geo.map|default('') }}" width="200" height="200">
                 </div>
             </div>
 
@@ -501,20 +499,20 @@
                           data-content="{{ app.translator.trans('info.geolocation',{},'infos') }}">{{ __('Info') }}</span>
                 </label>
                 <label>{{ __('Address lookup:') }} <input type="text" name="{{key}}[address]" id="{{key}}-address"
-                    value='{{ geolocation.address }}' style='width: 60%;'>
+                    value='{{ geolocation.address|default('') }}' style='width: 60%;'>
                 </label>
                 <label>{{ __('Latitude:') }} <input type="text" name="{{key}}[latitude]" id="{{key}}-latitude"
-                    value='{{ geolocation.latitude }}' style='width: 30%;'>
+                    value='{{ geolocation.latitude|default('') }}' style='width: 30%;'>
                  - {{ __('Longitude:') }} <input type="text" name="{{key}}[longitude]" id="{{key}}-longitude"
-                    value='{{ geolocation.longitude }}' style='width: 30%;'>
+                    value='{{ geolocation.longitude|default('') }}' style='width: 30%;'>
                 </label>
                 <p>{{ __('Matched address:') }}
-                <span id="{{ key }}-reversegeo"> {{ geolocation.formatted_address }}</span></p>
+                <span id="{{ key }}-reversegeo"> {{ geolocation.formatted_address|default('') }}</span></p>
                 <input type="hidden" name="{{key}}[formatted_address]" id="{{key}}-formatted_address"
-                       value='{{ geolocation.formatted_address }}' style='width: 30%;'>
+                       value='{{ geolocation.formatted_address|default('') }}' style='width: 30%;'>
                 <script type="text/javascript">
                     $(function() {
-                        bindGeolocation('{{key}}', '{{ geolocation.latitude }}', '{{ geolocation.longitude }}');
+                        bindGeolocation('{{key}}', '{{ geolocation.latitude|default('') }}', '{{ geolocation.longitude|default('') }}');
                     });
                 </script>
             </div>

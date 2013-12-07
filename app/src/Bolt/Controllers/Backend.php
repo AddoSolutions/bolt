@@ -49,6 +49,11 @@ class Backend implements ControllerProviderInterface
             ->before(array($this, 'before'))
             ->bind('dbupdate');
 
+        $ctl->get("/dbupdate_result", array($this, 'dbupdate_result'))
+            ->method('GET')
+            ->before(array($this, 'before'))
+            ->bind('dbupdate_result');
+
         $ctl->get("/clearcache", array($this, 'clearcache'))
             ->before(array($this, 'before'))
             ->bind('clearcache');
@@ -74,6 +79,8 @@ class Backend implements ControllerProviderInterface
 
         $ctl->get("/changelog/{contenttype}/{contentid}", array($this, 'changelogList'))
             ->before(array($this, 'before'))
+            ->value('contentid', '0')
+            ->value('contenttype', '')
             ->bind('changeloglist');
 
         $ctl->get("/changelog/{contenttype}/{contentid}/{id}", array($this, 'changelogDetails'))
@@ -166,7 +173,7 @@ class Backend implements ControllerProviderInterface
     public function postLogin(Silex\Application $app, Request $request)
     {
         switch ($request->get('action')) {
-            case 'login':   
+            case 'login':
                 // Log in, if credentials are correct.
                 $result = $app['users']->login($request->get('username'), $request->get('password'));
 
@@ -224,7 +231,8 @@ class Backend implements ControllerProviderInterface
      * clicks a "password reset" link in the email.
      *
      * @param Silex\Application $app
-     * @param Request           $request
+     * @param Request $request
+     * @return string
      */
     public function resetpassword(Silex\Application $app, Request $request)
     {
@@ -261,19 +269,6 @@ class Backend implements ControllerProviderInterface
 
         $output = $app['storage']->getIntegrityChecker()->repairTables();
 
-        if (empty($output)) {
-            $content = '<p>' . __('Your database is already up to date.') . '</p>';
-        } else {
-            $content = '<p>' . __('') . '</p>';
-            $content .= implode("<br>", $output);
-            $content .= '<p>' . __('Your database is now up to date.') . '</p>';
-        }
-
-        $content .= sprintf('<br><br><p><b>%s </b>%s</p>',
-            __('Tip:'),
-            __('Add some sample <a href=\'%url%\' class=\'btn btn-small\'>Records with Loripsum text</a>', array('%url%' => path('prefill')))
-        );
-
         // If 'return=edit' is passed, we should return to the edit screen. We do redirect twice, yes,
         // but that's because the newly saved contenttype.yml needs to be re-read.
         $return = $app['request']->query->get('return');
@@ -287,6 +282,13 @@ class Backend implements ControllerProviderInterface
 
             return redirect('fileedit', array('file' => "app/config/contenttypes.yml"));
         }
+        else {
+            return redirect('dbupdate_result', array('messages' => json_encode($output)));
+        }
+    }
+
+    public function dbupdate_result(Silex\Application $app, Request $request) {
+        $output = json_decode($request->get('messages'));
 
         $app['twig']->addGlobal('title', __("Database check / update"));
 
@@ -440,16 +442,108 @@ class Backend implements ControllerProviderInterface
 
     public function changelogList($contenttype, $contentid, Silex\Application $app, Request $request)
     {
-        $content = $app['storage']->getContent($contenttype, array('id' => $contentid));
+        // We have to handle three cases here:
+        // - $contenttype and $contentid given: get changelog entries for *one* content item
+        // - only $contenttype given: get changelog entries for all items of that type
+        // - neither given: get all changelog entries
+
+        // But first, let's get some pagination stuff out of the way.
+        $limit = 5;
+        if ($page = $request->get('page')) {
+            if ($page === 'all') {
+                $limit = null;
+                $page = null;
+            }
+            else {
+                $page = intval($page);
+            }
+        }
+        else {
+            $page = 1;
+        }
+
+        // Some options that are the same for all three cases
         $options = array(
-                'order' => 'date DESC',
-                'contentid' => $contentid,
+            'order' => 'date DESC',
             );
-        $logEntries = $app['storage']->getChangelogByContentType($contenttype, $options);
+        if ($limit) {
+            $options['limit'] = $limit;
+        }
+        if ($page > 0 && $limit) {
+            $options['offset'] = ($page - 1) * $limit;
+        }
+
+        $content = null;
+
+        // Now here things diverge.
+
+        if (empty($contenttype)) {
+            // Case 1: No content type given, show from *all* items.
+            // This is easy:
+            $title = __('All content types');
+            $logEntries = $app['storage']->getChangelog($options);
+            $itemcount = $app['storage']->countChangelog($options);
+        }
+        else {
+            // We have a content type, and possibly a contentid.
+            $contenttypeObj = $app['storage']->getContentType($contenttype);
+            if ($contentid) {
+                $content = $app['storage']->getContent($contenttype, array('id' => $contentid));
+                $options['contentid'] = $contentid;
+            }
+            // Getting a slice of data and the total count
+            $logEntries = $app['storage']->getChangelogByContentType($contenttype, $options);
+            $itemcount = $app['storage']->countChangelogByContentType($contenttype, $options);
+
+            // The page title we're sending to the template depends on a few
+            // things: if no contentid is given, we'll use the plural form
+            // of the content type; otherwise, we'll derive it from the
+            // changelog or content item itself.
+            if ($contentid) {
+                if ($content) {
+                    // content item is available: get the current title
+                    $title = $content->getTitle();
+                }
+                else {
+                    // content item does not exist (anymore).
+                    if (empty($logEntries)) {
+                        // No item, no entries - phew. Content type name and ID
+                        // will have to do.
+                        $title = $contenttypeObj['singular_name'] . ' #' . $contentid;
+                    }
+                    else {
+                        // No item, but we can use the most recent title.
+                        $title = $logEntries[0]['title'];
+                    }
+                }
+            }
+            else {
+                // We're displaying all changes for the entire content type,
+                // so the plural name is most appropriate.
+                $title = $contenttypeObj['name'];
+            }
+        }
+
+        // Now calculate number of pages.
+        // We can't easily do this earlier, because we only have the item count
+        // now.
+        // Note that if either $limit or $pagecount is empty, the template will
+        // skip rendering the pager.
+        if ($limit) {
+            $pagecount = ceil($itemcount / $limit);
+        }
+        else {
+            $pagecount = null;
+        }
+
         $renderVars = array(
             'contenttype' => $contenttype,
             'entries' => $logEntries,
             'content' => $content,
+            'title' => $title,
+            'itemcount' => $itemcount,
+            'pagecount' => $pagecount,
+            'currentpage' => $page,
             );
         return $app['twig']->render('changeloglist.twig', $renderVars);
     }
@@ -502,6 +596,7 @@ class Backend implements ControllerProviderInterface
                 return redirect('dashboard');
             }
 
+            // Save the record, and return to the overview screen, or to the record (if we clicked 'save and continue')
             if ($app['storage']->saveContent($content, $contenttype['slug'])) {
 
                 if (!empty($id)) {
@@ -511,6 +606,19 @@ class Backend implements ControllerProviderInterface
                 }
                 $app['log']->add($content->getTitle(), 3, $content, 'save content');
 
+                // If 'returnto is set', we return to the edit page, with the correct anchor.
+                if ($app['request']->get('returnto')) {
+
+                    // We must 'return to' the edit page. In which case we must know the Id, so let's fetch it.
+                    if (empty($id)) {
+                        $id = $app['storage']->getLatestId($contenttype['slug']);
+                    }
+
+                    return redirect('editcontent', array('contenttypeslug' => $contenttype['slug'], 'id' => $id), "#".$app['request']->get('returnto'));
+
+                }
+
+                // No returnto, so we go back to the 'overview' for this contenttype.
                 return redirect('overview', array('contenttypeslug' => $contenttype['slug']));
 
             } else {
@@ -522,6 +630,9 @@ class Backend implements ControllerProviderInterface
 
         if (!empty($id)) {
             $content = $app['storage']->getContent($contenttype['slug'], array('id' => $id));
+            if (empty($content)) {
+                $app->abort(404, __('The %contenttype% you were looking for does not exist. It was probably deleted, or it never existed.', array('%contenttype%' => $contenttype['singular_name'])));
+            }
 
             // Check if we're allowed to edit this content..
             if (($content['username'] != $app['users']->getCurrentUsername()) && !$app['users']->isAllowed('editcontent:all')) {
@@ -681,10 +792,12 @@ class Backend implements ControllerProviderInterface
         $form = $app['form.factory']->createBuilder('form', $user)
             ->add('id', 'hidden')
             ->add('username', 'text', array(
-                'constraints' => array(new Assert\NotBlank(), new Assert\Length(array('min' => 2, 'max' => 32)))
+                'constraints' => array(new Assert\NotBlank(), new Assert\Length(array('min' => 2, 'max' => 32))),
+                'label' => __('Username')
             ))
             ->add('password', 'password', array(
-                'required' => false
+                'required' => false,
+                'label' => __('Password')
             ))
             ->add('password_confirmation', 'password', array(
                 'required' => false,
@@ -692,9 +805,11 @@ class Backend implements ControllerProviderInterface
             ))
             ->add('email', 'text', array(
                 'constraints' => new Assert\Email(),
+                'label' => __('Email')
             ))
             ->add('displayname', 'text', array(
-                'constraints' => array(new Assert\NotBlank(), new Assert\Length(array('min' => 2, 'max' => 32)))
+                'constraints' => array(new Assert\NotBlank(), new Assert\Length(array('min' => 2, 'max' => 32))),
+                'label' => __('Display name')
             ));
 
         // If we're adding the first user, add them as 'developer' by default, so don't
@@ -707,7 +822,8 @@ class Backend implements ControllerProviderInterface
             $form->add('userlevel', 'choice', array(
                 'choices' => $userlevels,
                 'expanded' => false,
-                'constraints' => new Assert\Choice(array_keys($userlevels))
+                'constraints' => new Assert\Choice(array_keys($userlevels)),
+                'label' => __('User level')
             ))
                 ->add('enabled', 'choice', array(
                     'choices' => $enabledoptions,
@@ -725,8 +841,14 @@ class Backend implements ControllerProviderInterface
 
         // If we're adding a new user, these fields will be hidden.
         if (!empty($id)) {
-            $form->add('lastseen', 'text', array('disabled' => true))
-                ->add('lastip', 'text', array('disabled' => true));
+            $form->add('lastseen', 'text', array(
+                    'disabled' => true,
+                    'label' => __('Last seen')
+                ))
+                ->add('lastip', 'text', array(
+                    'disabled' => true,
+                    'label' => __('Last IP')
+                ));
         }
 
         // Make sure the passwords are identical and some other check, with a custom validator..
@@ -894,7 +1016,7 @@ class Backend implements ControllerProviderInterface
             // Define the "Upload here" form.
             $form = $app['form.factory']
                 ->createBuilder('form')
-                ->add('FileUpload', 'file', array('label' => "Upload a file to this folder:"))
+                ->add('FileUpload', 'file', array('label' => __("Upload a file to this folder:")))
                 ->getForm();
 
             // Handle the upload.
@@ -1130,8 +1252,7 @@ class Backend implements ControllerProviderInterface
             // no gathering here : if the file doesn't exist yet, we load a
             // copy from the locale_fallback version (en)
             if (!file_exists($filename) || filesize($filename) < 10) {
-                $locale_fb = $app['locale_fallback'];
-                $srcfile = "app/resources/translations/$locale_fb/$domain.$locale_fb.$type";
+                $srcfile = "app/resources/translations/$locale_fb/$domain.en.$type";
                 $srcfilename = realpath(__DIR__ . "/../../../..") . "/$srcfile";
                 $content = file_get_contents($srcfilename);
             } else {

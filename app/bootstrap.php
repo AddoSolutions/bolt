@@ -1,5 +1,8 @@
 <?php
 
+mb_internal_encoding('UTF-8');
+mb_http_output('UTF-8');
+
 if (!defined( 'BOLT_PROJECT_ROOT_DIR')) {
     if (substr(dirname(__FILE__), -21) == '/vendor/bolt/bolt/app') { // installed bolt with composer
         define('BOLT_COMPOSER_INSTALLED', true);
@@ -42,13 +45,14 @@ $starttime = getMicrotime();
 
 $app = new Bolt\Application();
 
+$app->register(new Bolt\Provider\ConfigServiceProvider());
 $app->register(new Silex\Provider\SessionServiceProvider(), array(
     'session.storage.options' => array(
         'name' => 'bolt_session',
+        'cookie_secure' => $app['config']->get('general/cookies_https_only'),
         'cookie_httponly' => true
     )
 ));
-$app->register(new Bolt\Provider\ConfigServiceProvider());
 $app->register(new Bolt\Provider\LogServiceProvider());
 
 // Finally, check if the app/database folder is writable, if it needs to be.
@@ -82,11 +86,6 @@ $app->register(new Silex\Provider\TwigServiceProvider(), array(
         'strict_variables' => $app['config']->get('general/strict_variables'),
         'autoescape' => true )
 ));
-
-// Add the string loader..
-$loader = new Twig_Loader_String();
-$app['twig.loader']->addLoader($loader);
-
 
 $app->register(new Silex\Provider\DoctrineServiceProvider(), array(
     'db.options' => $dboptions
@@ -135,12 +134,30 @@ $app->register(new Bolt\Provider\StackServiceProvider());
 $app['paths'] = getPaths($app['config']);
 $app['twig']->addGlobal('paths', $app['paths']);
 
+// Initialize the 'editlink' and 'edittitle'..
 $app['editlink'] = "";
+$app['edittitle'] = "";
+
+// Set the Krumo default configuration.
+\Krumo::setConfig(array(
+    'skin' => array(
+        'selected' => "stylish"
+    ),
+    'display' => array(
+        'show_version' => false,
+        'show_call_info' => false,
+        'cascade' => array(10,5,1),
+        'truncate_length' => 70,
+        'sort_arrays' => false
+    ),
+    'dont_traverse' => array(
+        'objects' => array('Bolt\Application')
+    )
+));
 
 // Add the Bolt Twig functions, filters and tags.
 $app['twig']->addExtension(new Bolt\TwigExtension($app));
 $app['twig']->addTokenParser(new Bolt\SetcontentTokenParser());
-
 
 require __DIR__.'/app.php';
 

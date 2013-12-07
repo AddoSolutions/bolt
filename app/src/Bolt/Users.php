@@ -227,6 +227,7 @@ class Users
      * Get a key to identify the session with.
      *
      * @param  string $name
+     * @param string $salt
      * @return string
      */
     private function getAuthtoken($name = "", $salt = "")
@@ -278,7 +279,7 @@ class Users
             time() + $this->app['config']->get('general/cookies_lifetime'),
             '/',
             $this->app['config']->get('general/cookies_domain'),
-            false,
+            $this->app['config']->get('general/cookies_https_only'),
             true
         );
 
@@ -502,7 +503,7 @@ class Users
                 time() -1 ,
                 '/',
                 $this->app['config']->get('general/cookies_domain'),
-                false,
+                $this->app['config']->get('general/cookies_https_only'),
                 true
             );
 
@@ -666,7 +667,7 @@ class Users
             time() -1 ,
             '/',
             $this->app['config']->get('general/cookies_domain'),
-            false,
+            $this->app['config']->get('general/cookies_https_only'),
             true
         );
 
@@ -873,10 +874,19 @@ class Users
 
     }
 
+    private function canonicalizeFieldValue($fieldname, $fieldvalue) {
+        switch ($fieldname) {
+            case 'email': return strtolower(trim($fieldvalue));
+            case 'username': return strtolower(preg_replace('/[^a-zA-Z0-9_\\-]/', '', $fieldvalue));
+            default: return trim($fieldvalue);
+        }
+    }
+
     /**
-     * Check if a certain field with a certain value doesn't exist already. We use
-     * 'makeSlug', because we shouldn't allow 'admin@example.org', when there already
-     * is an 'ADMIN@EXAMPLE.ORG'.
+     * Check if a certain field with a certain value doesn't exist already.
+     * Depending on the field type, different pre-massaging of the compared
+     * values are applied, because what constitutes 'equal' for the purpose
+     * of this filtering depends on the field type.
      *
      * @param  string $fieldname
      * @param  string $value
@@ -885,9 +895,10 @@ class Users
      */
     public function checkAvailability($fieldname, $value, $currentid=0)
     {
-
         foreach ($this->users as $user) {
-            if ((makeSlug($user[$fieldname]) == makeSlug($value)) && ($user['id'] != $currentid)) {
+            if (($this->canonicalizeFieldValue($fieldname, $user[$fieldname]) ===
+                 $this->canonicalizeFieldValue($fieldname, $value)) &&
+                ($user['id'] != $currentid)) {
                 return false;
             }
         }

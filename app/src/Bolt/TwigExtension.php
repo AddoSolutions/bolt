@@ -55,7 +55,9 @@ class TwigExtension extends \Twig_Extension
             new \Twig_SimpleFunction('last', array($this, 'last')),
             new \Twig_SimpleFunction('__', array($this, 'trans'), array('is_safe' => array('html'))),
             new \Twig_SimpleFunction('redirect', array($this, 'redirect'), array('is_safe' => array('html'))),
-            new \Twig_SimpleFunction('stackitems', array($this, 'stackitems'))
+            new \Twig_SimpleFunction('stackitems', array($this, 'stackitems')),
+            new \Twig_SimpleFunction('stacked', array($this, 'stacked')),
+            new \Twig_SimpleFunction('imageinfo', array($this, 'imageinfo'))
         );
     }
 
@@ -68,8 +70,11 @@ class TwigExtension extends \Twig_Extension
             new \Twig_SimpleFilter('rot13', array($this, 'rot13Filter')),
             new \Twig_SimpleFilter('trimtext', array($this, 'trim'), array('is_safe' => array('html'))),
             new \Twig_SimpleFilter('markdown', array($this, 'markdown'), array('is_safe' => array('html'))),
+            new \Twig_SimpleFilter('tt', array($this, 'decorateTT'), array('is_safe' => array('html'))),
             new \Twig_SimpleFilter('ucfirst', array($this, 'ucfirst')),
             new \Twig_SimpleFilter('excerpt', array($this, 'excerpt'), array('is_safe' => array('html'))),
+            new \Twig_SimpleFilter('ymllink', array($this, 'ymllink'), array('is_safe' => array('html'))),
+            new \Twig_SimpleFilter('slug', array($this, 'slug')),
             new \Twig_SimpleFilter('current', array($this, 'current')),
             new \Twig_SimpleFilter('thumbnail', array($this, 'thumbnail')),
             new \Twig_SimpleFilter('image', array($this, 'image')),
@@ -80,15 +85,19 @@ class TwigExtension extends \Twig_Extension
             new \Twig_SimpleFilter('first', array($this, 'first')),
             new \Twig_SimpleFilter('last', array($this, 'last')),
             new \Twig_SimpleFilter('__', array($this, 'trans'), array('is_safe' => array('html'))),
+            new \Twig_SimpleFilter('round', array($this, 'round')),
+            new \Twig_SimpleFilter('floor', array($this, 'floor')),
+            new \Twig_SimpleFilter('ceil', array($this, 'ceil')),
+            new \Twig_SimpleFilter('imageinfo', array($this, 'imageinfo'))
         );
     }
 
 
     /**
-     * Output pretty-printed arrays.
+     * Output pretty-printed arrays / objects.
      *
-     * @see util::php
-     * @see http://brandonwamboldt.github.com/utilphp/
+     * @see \krumo::dump
+     * @see https://github.com/oodle/krumo
      *
      * @param  mixed $var
      * @return string
@@ -96,7 +105,7 @@ class TwigExtension extends \Twig_Extension
     public function printDump($var)
     {
 
-        $output = util::var_dump($var, true);
+        $output = \Krumo::dump($var, KRUMO_CAPTURE);
 
         return $output;
 
@@ -197,6 +206,105 @@ class TwigExtension extends \Twig_Extension
 
     }
 
+
+    /**
+     * Create a link to edit a .yml file, if a filename is detected in the string. Mostly
+     * for use in Flashbag messages, to allow easy editing.
+     *
+     * @param string $str
+     * @return string Resulting string
+     */
+    public function ymllink($str)
+    {
+
+        if (preg_match("/ ([a-z0-9_-]+\.yml)/i", $str, $matches)) {
+            $path = path('fileedit', array('file' => "app/config/" . $matches[1]));
+            $link = sprintf(" <a href='%s'>%s</a>", $path, $matches[1]);
+            $str = preg_replace("/ ([a-z0-9_-]+\.yml)/i", $link, $str);
+        }
+
+        return $str;
+
+    }
+
+
+
+    /**
+     * Get an array with the dimensions of an image, together with its
+     * aspectratio and some other info.
+     *
+     * @param string $filename
+     * @return array Specifics
+     */
+    public function imageinfo($filename)
+    {
+
+        $fullpath = sprintf("%s/%s", $this->app['paths']['filespath'], $filename);
+
+        if (!is_readable($fullpath) || !is_file($fullpath)) {
+            return false;
+        }
+
+        $types = array(
+            0=>'unknown',
+            1=>'gif',
+            2=>'jpeg',
+            3=>'png',
+            4=>'swf',
+            5=>'psd',
+            6=>'bmp'
+        );
+
+        // Get the dimensions of the image
+        $imagesize = getimagesize($fullpath);
+
+        // Get the aspectratio
+        if ($imagesize[1] > 0) {
+            $ar = $imagesize[0] / $imagesize[1];
+        } else {
+            $ar = 0;
+        }
+
+        $info = array(
+            'width' => $imagesize[0],
+            'height' => $imagesize[1],
+            'type' => $types[ $imagesize[2] ],
+            'mime' => $imagesize['mime'],
+            'aspectratio' => $ar,
+            'filename' => $filename,
+            'fullpath' => realpath($fullpath),
+            'url' => str_replace("//", "/", $this->app['paths']['files'] . $filename)
+        );
+
+        // Landscape if aspectratio > 5:4
+        $info['landscape'] = ($ar >= 1.25) ? true : false;
+
+        // Portrait if aspectratio < 4:5
+        $info['portrait'] = ($ar <= 0.8) ? true : false;
+
+        // Square-ish, if neither portrait or landscape
+        $info['square'] = !$info['landscape'] && !$info['portrait'];
+
+        return $info;
+
+    }
+
+
+    /**
+     * Return the 'sluggified' version of a string.
+     *
+     * @param $str input value
+     * @return string slug
+     */
+    public function slug($str)
+    {
+
+        $slug = makeSlug($str);
+
+        return $slug;
+
+    }
+
     /**
      * Trims the given string to a particular length.
      *
@@ -221,10 +329,14 @@ class TwigExtension extends \Twig_Extension
     public function markdown($content)
     {
         // Parse the field as Markdown, return HTML
-        $markdownParser = new \dflydev\markdown\MarkdownParser();
-        $output = $markdownParser->transformMarkdown($content);
+        $output = \Parsedown::instance()->parse($content);
 
         return $output;
+    }
+
+    public function decorateTT($str)
+    {
+        return decorateTT($str);
     }
 
     /**
@@ -531,6 +643,45 @@ class TwigExtension extends \Twig_Extension
 
 
     /**
+     * return the 'round' of a value..
+     *
+     * @param  float|int $a
+     * @return int
+     */
+    public function round($a)
+    {
+        return round($a);
+    }
+
+
+
+    /**
+     * return the 'floor' of a value..
+     *
+     * @param  float|int $a
+     * @return int
+     */
+    public function floor($a)
+    {
+        return floor($a);
+    }
+
+
+
+    /**
+     * return the 'ceil' of a value..
+     *
+     * @param  float|int $a
+     * @return int
+     */
+    public function ceil($a)
+    {
+        return ceil($a);
+    }
+
+
+
+    /**
      * Return the requested parameter from $_REQUEST, $_GET or $_POST..
      *
      * @param  string $parameter    The parameter to get
@@ -651,14 +802,16 @@ class TwigExtension extends \Twig_Extension
      *
      * example: {{ content.image|fancybox(320, 240) }}
      * example: {{ fancybox(content.image, 320, 240) }}
+     * example: {{ content.image|fancybox(width=320, height=240, title="My Image") }}
      *
      * @param  string $filename Image filename
-     * @param  int $width    Image width
-     * @param  int $height   Image height
-     * @param  string $crop     Crop image string identifier
+     * @param  int $width Image width
+     * @param  int $height Image height
+     * @param  string $crop Crop image string identifier
+     * @param  string $title Display title for image
      * @return string HTML output
      */
-    public function fancybox($filename = "", $width = 100, $height = 100, $crop = "")
+    public function fancybox($filename = "", $width = 100, $height = 100, $crop = "", $title = "")
     {
 
         if (!empty($filename)) {
@@ -671,9 +824,13 @@ class TwigExtension extends \Twig_Extension
             $thumbnail = $this->thumbnail($filename, $width, $height, $crop);
             $large = $this->thumbnail($filename, $fullwidth, $fullheight, 'r');
 
-            $output = sprintf('<a href="%s" class="fancybox" rel="fancybox" title="Image: %s">
+            if (empty($title)) {
+                $title = sprintf('%s: %s', __("Image"), $filename);
+            }
+
+            $output = sprintf('<a href="%s" class="fancybox" rel="fancybox" title="%s">
                     <img src="%s" width="%s" height="%s"></a>',
-                $large, $filename, $thumbnail, $width, $height);
+                $large, $title, $thumbnail, $width, $height);
 
         } else {
             $output = "&nbsp;";
@@ -905,7 +1062,7 @@ class TwigExtension extends \Twig_Extension
     /**
      * Translate using our __()
      *
-     * @param string $content
+     * @internal param string $content
      *
      * @return string translated content
      */
@@ -944,11 +1101,12 @@ class TwigExtension extends \Twig_Extension
     }
 
 
-
     /**
      * Return an array with the items on the stack
      *
-     * @param string type
+     * @param int $amount
+     * @param string $type type
+     * @return
      */
     public function stackitems($amount = 20, $type = "")
     {
@@ -956,6 +1114,21 @@ class TwigExtension extends \Twig_Extension
         $items = $this->app['stack']->listitems($amount, $type);
 
         return $items;
+
+    }
+
+
+    /**
+     * Return whether or not an item is on the stack
+     *
+     * @param string filename
+     */
+    public function stacked($filename)
+    {
+
+        $stacked = $this->app['stack']->isOnStack($filename);
+
+        return $stacked;
 
     }
 

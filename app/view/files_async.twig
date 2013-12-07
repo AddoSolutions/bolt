@@ -4,7 +4,7 @@
     <p>{{ __('Path:') }}
     {% for path, segment in pathsegments %}
     {% if not loop.first %} / {% endif %}
-    <a href="{{ path('asyncbrowse', { 'path': path, 'key': key }) }}" class="folder">{{segment}}</a>
+    <a href="#" data-action="stack.changeFolder('{{ key }}', '{{ path('asyncbrowse', { 'path': path, 'key': key }) }}');" class="folder">{{segment}}</a>
     {% endfor %}
     </p>
 {% endif %}
@@ -47,7 +47,7 @@
             </td>
             <td>
                 <a href="{{ file.newpath|thumbnail(1000, 1000, 'r') }}" class="btn btn-small preview fancybox" rel='fancybox' title="Image: {{ file.filename }}">
-                Preview</a>
+                {{ __('Preview') }}</a>
             </td>
         </tr>
     {% endif %}

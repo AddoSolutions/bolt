@@ -16,6 +16,10 @@ jQuery(function($) {
 
     initActions();
 
+    window.setTimeout(function(){
+        initKeyboardShortcuts();
+    }, 1000);
+
     // Show 'dropzone' for jQuery file uploader.
     // @todo make it prettier, and distinguish between '.in' and '.hover'.
     $(document).bind('dragover', function (e) {
@@ -117,6 +121,8 @@ jQuery(function($) {
     });
 
 
+    files = new Files();
+
     stack = new Stack();
 
 });
@@ -140,6 +146,47 @@ function initActions() {
     });
 
 }
+
+
+
+/**
+ * Initialize keyboard shortcuts:
+ * - Click 'save' in Edit content screen.
+ * - Click 'save' in "edit file" screen.
+ *
+ */
+function initKeyboardShortcuts() {
+
+    // We're on a regular 'edit content' page, if we have a sidebarsavecontinuebutton.
+    // If we're on an 'edit file' screen,  we have a #saveeditfile
+    if ( $('#sidebarsavecontinuebutton').is('*') || $('#saveeditfile').is('*') ) {
+
+        // Bind ctrl-s and meta-s for saving..
+        $('body, input').bind('keydown.ctrl_s keydown.meta_s', function(event) {
+            event.preventDefault();
+            $('form').watchChanges();
+            $('#sidebarsavecontinuebutton, #saveeditfile').trigger('click');
+        });
+
+        // Initialize watching for changes on "the form".
+        var $form = $('form').watchChanges();
+
+        // Initialize handler for 'closing window'
+        window.onbeforeunload = confirmExit;
+
+        function confirmExit()
+        {
+            if ($form.hasChanged()) {
+                return "You have unfinished changes on this page. If you continue without saving, you will lose these changes.";
+            }
+        }
+
+    }
+
+
+
+}
+
 
 
 /**
@@ -555,6 +602,51 @@ function bindMarkdown(key) {
 }
 
 /**
+ * Backbone object for all file actions functionality.
+ */
+var Files = Backbone.Model.extend({
+
+    defaults: {
+    },
+
+    initialize: function() {
+    },
+
+    /**
+     * Delete a file from the server.
+     *
+     * @param string filename
+     */
+    deleteFile: function(filename, element) {
+
+        if(!confirm('Are you sure you want to delete ' + filename + '?')) {
+            return;
+        }
+
+        $.ajax({
+            url: asyncpath + 'deletefile',
+            type: 'POST',
+            data: { 'filename': filename },
+            success: function(result) {
+                console.log('Deleted file ' + filename  + ' from the server');
+
+                // If we are on the files table, remove image row from the table, as visual feedback
+                if (element != null) {
+                    $(element).closest('tr').slideUp();
+                }
+
+                // TODO delete from Stack if applicable
+
+            },
+            error: function() {
+                console.log('Failed to delete the file from the server');
+            }
+        });
+    }
+
+});
+
+/**
  * Backbone object for all Stack-related functionality.
  */
 var Stack = Backbone.Model.extend({
@@ -590,7 +682,7 @@ var Stack = Backbone.Model.extend({
      *
      * @param string filename
      */
-    addToStack: function(filename) {
+    addToStack: function(filename, element) {
 
         var ext = filename.substr(filename.lastIndexOf('.') + 1).toLowerCase();
         if (ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "gif" ) {
@@ -613,6 +705,11 @@ var Stack = Backbone.Model.extend({
                 }
                 if ($("#stackholder div.stackitem.item-8").is('*')) {
                     $("#stackholder div.stackitem.item-8").remove();
+                }
+
+                // If added via a button on the page, disable the button, as visual feedback
+                if (element != null) {
+                    $(element).addClass('disabled');
                 }
 
                 // Insert new item at the front..

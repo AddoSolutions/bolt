@@ -1,8 +1,7 @@
 <?php
 
-namespace Bolt\Database;
+namespace Bolt\Datacollector;
 
-use Doctrine\DBAL\Logging\DebugStack;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\DataCollector\DataCollector;
@@ -40,9 +39,6 @@ class BoltDataCollector extends DataCollector
             'version' => $this->app['bolt_version'],
             'name' => $this->app['bolt_name'],
             'fullversion' => sprintf('%s %s %s', __("Version: "), $this->app['bolt_version'], $this->app['bolt_name']),
-            'templates' => hackislyParseRegexTemplates($this->app['twig.loader']),
-            'templatechosen' => $this->app['log']->getValue('templatechosen'),
-            'templateerror' => $this->app['log']->getValue('templateerror'),
             'payoff' => __('Sophisticated, lightweight & simple CMS'),
             'aboutlink' => sprintf("<a href=\"%s\">%s</a>", path('about'), __('About') )
         );
@@ -56,6 +52,10 @@ class BoltDataCollector extends DataCollector
             );
         }
 
+        if (!empty($this->app['editlink'])) {
+            $this->data['editlink'] = $this->app['editlink'];
+            $this->data['edittitle'] = $this->app['edittitle'];
+        }
 
     }
 
@@ -89,36 +89,6 @@ class BoltDataCollector extends DataCollector
         return $this->data['name'];
     }
 
-    /**
-     * Getter for templates
-     *
-     * @return array
-     */
-    public function getTemplates()
-    {
-        return $this->data['templates'];
-    }
-
-    /**
-     * Getter for templatechosen
-     *
-     * @return string
-     */
-    public function getChosenTemplate()
-    {
-        return $this->data['templatechosen'];
-    }
-
-
-    /**
-     * Getter for templateerror
-     *
-     * @return string
-     */
-    public function getTemplateError()
-    {
-        return $this->data['templateerror'];
-    }
 
     /**
      * Getter for branding
@@ -149,6 +119,28 @@ class BoltDataCollector extends DataCollector
     public function getAboutlink()
     {
         return $this->data['aboutlink'];
+    }
+
+
+    /**
+     * Getter for editlink
+     *
+     * @return string
+     */
+    public function getEditlink()
+    {
+        return $this->data['editlink'];
+    }
+
+
+    /**
+     * Getter for aboutlink
+     *
+     * @return string
+     */
+    public function getEdittitle()
+    {
+        return $this->data['edittitle'];
     }
 
 

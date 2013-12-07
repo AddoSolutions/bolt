@@ -30,6 +30,9 @@ class IntegrityChecker
      */
     private $textDefault = null;
 
+    const INTEGRITY_CHECK_INTERVAL = 1800; // max. validity of a database integrity check, in seconds
+    const INTEGRITY_CHECK_TS_FILENAME = 'dbcheck_ts'; // filename for the check timestamp file
+
     public function __construct(\Bolt\Application $app)
     {
         $this->app = $app;
@@ -48,6 +51,38 @@ class IntegrityChecker
             $this->textDefault = '';
         }
 
+    }
+
+    private static function getValidityTimestampFilename() {
+        return dirname(__FILE__) . '/../../../cache/' . self::INTEGRITY_CHECK_TS_FILENAME;
+    }
+
+    public static function invalidate() {
+        // delete app/cache/dbcheck-ts
+        try {
+            @unlink(self::getValidityTimestampFilename());
+        }
+        catch (\ErrorException $ex) {
+            /*
+            100 REM TECHNICALLY, WE SHOULD CATCH MORE SPECIFICALLY HERE,
+            110 REM AND THE @ SHOULD SILENCE THE FILE-NOT-FOUND ERROR
+            120 REM ANYWAY, BUT FOR SOME REASON, THIS DOESN'T WORK.
+            130 REM SO INSTEAD, WE'LL DO:
+            140 ON ERROR RESUME NEXT
+            */
+        }
+    }
+
+    public static function markValid() {
+        // write current date/time > app/cache/dbcheck-ts
+        $timestamp = time();
+        file_put_contents(self::getValidityTimestampFilename(), $timestamp);
+    }
+
+    public static function isValid() {
+        // compare app/cache/dbcheck-ts vs. current timestamp
+        $validityTS = intval(@file_get_contents(self::getValidityTimestampFilename()));
+        return ($validityTS >= time() - self::INTEGRITY_CHECK_INTERVAL);
     }
 
     /**
@@ -115,7 +150,7 @@ class IntegrityChecker
             // Create the users table..
             if (!isset($currentTables[$table->getName()])) {
 
-                $messages[] = "Table <tt>" . $table->getName() . "</tt> is not present.";
+                $messages[] = "Table `" . $table->getName() . "` is not present.";
 
             } else {
 
@@ -126,41 +161,41 @@ class IntegrityChecker
                     // diff may be just deleted columns which we have reset above
                     // only exec and add output if does really alter anything
                     if ($this->app['db']->getDatabasePlatform()->getAlterTableSQL($diff)) {
-                        $msg = "Table <tt>" . $table->getName() . "</tt> is not the correct schema: ";
+                        $msg = "Table `" . $table->getName() . "` is not the correct schema: ";
                         $msgParts = array();
                         // No check on foreign keys yet because we don't use them
                         /** @var $col Column */
                         foreach ($diff->addedColumns as $col) {
-                            $msgParts[] = "missing column <tt>" . $col->getName() . "</tt>";
+                            $msgParts[] = "missing column `" . $col->getName() . "`";
                         }
                         /** @var $index Index */
                         foreach ($diff->addedIndexes as $index) {
-                            $msgParts[] = "missing index on <tt>" . implode( ', ', $index->getUnquotedColumns() ) . "</tt>";
+                            $msgParts[] = "missing index on `" . implode( ', ', $index->getUnquotedColumns() ) . "`";
                         }
                         ///** @var $fk ForeignKeyConstraint */
                         //foreach ($diff->addedForeignKeys as $fk) {
-                        //    $msgParts[] = "missing foreign key <tt>" . $fk->getName() . "</tt>";
+                        //    $msgParts[] = "missing foreign key `" . $fk->getName() . "`";
                         //}
                         /** @var $col ColumnDiff */
                         foreach ($diff->changedColumns as $col) {
-                            $msgParts[] = "invalid column <tt>" . $col->oldColumnName . "</tt>";
+                            $msgParts[] = "invalid column `" . $col->oldColumnName . "`";
                         }
                         /** @var $index Index */
                         foreach ($diff->changedIndexes as $index) {
-                            $msgParts[] = "invalid index on <tt>" . implode( ', ', $index->getUnquotedColumns() ) . "</tt>";
+                            $msgParts[] = "invalid index on `" . implode( ', ', $index->getUnquotedColumns() ) . "`";
                         }
                         ///** @var $fk ForeignKeyConstraint */
                         //foreach ($diff->changedForeignKeys as $fk) {
-                        //    $msgParts[] = "invalid foreign key " . $fk->getName() . "</tt>";
+                        //    $msgParts[] = "invalid foreign key " . $fk->getName() . "`";
                         //}
                         foreach ($diff->removedColumns as $colName => $val) {
-                            $msgParts[] = "removed column <tt>" . $colName . "</tt>";
+                            $msgParts[] = "removed column `" . $colName . "`";
                         }
                         foreach ($diff->removedIndexes as $indexName => $val) {
-                            $msgParts[] = "removed index <tt>" . $indexName . "</tt>";
+                            $msgParts[] = "removed index `" . $indexName . "`";
                         }
                         //foreach ($diff->removedForeignKeys as $fkName => $val) {
-                        //    $msgParts[] = "removed foreign key <tt>" . $fkName . "</tt>";
+                        //    $msgParts[] = "removed foreign key `" . $fkName . "`";
                         //}
                         $msg .= implode( ', ', $msgParts );
                         $messages[] = $msg;
@@ -172,7 +207,7 @@ class IntegrityChecker
         // If there were no messages, update the timer, so we don't check it again..
         // If there _are_ messages, keep checking until it's fixed.
         if (empty($messages)) {
-            $this->app['session']->set('database_checked', time());
+            self::markValid();
         }
 
         return $messages;
@@ -186,16 +221,7 @@ class IntegrityChecker
      */
     public function needsCheck()
     {
-
-        // Only check the DB once an hour, because it's pretty time-consuming.
-        $databasechecked = time() - $this->app['session']->get('database_checked');
-
-        if ($databasechecked < $this->checktimer) {
-            return false;
-        } else {
-            return true;
-        }
-
+        return !self::isValid();
     }
 
     /**
@@ -234,7 +260,7 @@ class IntegrityChecker
                     $this->app['db']->query($query);
                 }
 
-                $output[] = "Created table <tt>" . $table->getName() . "</tt>.";
+                $output[] = "Created table `" . $table->getName() . "`.";
 
             } else {
 
@@ -245,7 +271,7 @@ class IntegrityChecker
                     // only exec and add output if does really alter anything
                     if ($this->app['db']->getDatabasePlatform()->getAlterTableSQL($diff)) {
                         $schemaManager->alterTable( $diff );
-                        $output[] = "Updated <tt>" . $table->getName() . "</tt> table to match current schema.";
+                        $output[] = "Updated `" . $table->getName() . "` table to match current schema.";
                     }
                 }
             }
@@ -337,7 +363,7 @@ class IntegrityChecker
         $usersTable->addColumn("lastip", "string", array("length" => 32, "default" => ""));
         $usersTable->addColumn("displayname", "string", array("length" => 32));
         $usersTable->addColumn("userlevel", "string", array("length" => 32));
-        $usersTable->addColumn("contenttypes", "string", array("length" => 256));
+        $usersTable->addColumn("contenttypes", "text", array());
         $usersTable->addColumn("stack", "string", array("length" => 1024, "default" => ""));
         $usersTable->addColumn("enabled", "boolean");
         $usersTable->addIndex( array( 'enabled' ) );
@@ -406,6 +432,10 @@ class IntegrityChecker
         $contentChangelogTable->addColumn("username", "string", array("length" => 64, "default" => ""));
         $contentChangelogTable->addIndex( array( 'username' ) );
 
+        // the title as it was right before changing/deleting the item, or
+        // right after creating it (according to getTitle())
+        $contentChangelogTable->addColumn("title", "string", array("length" => 256, "default" => ""));
+
         // contenttype and contentid refer to the entity type we're changing
         $contentChangelogTable->addColumn("contenttype", "string", array('length' => 128));
         $contentChangelogTable->addIndex( array( 'contenttype' ) );
@@ -417,7 +447,7 @@ class IntegrityChecker
         $contentChangelogTable->addIndex( array( 'mutation_type' ) );
 
         // a plain-text summary of the differences between the old and the new version
-        $contentChangelogTable->addColumn("diff", "string", array());
+        $contentChangelogTable->addColumn("diff", "text", array());
         $tables[] = $contentChangelogTable;
 
         return $tables;

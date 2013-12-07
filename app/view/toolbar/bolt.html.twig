@@ -2,11 +2,22 @@
 
 {% block toolbar %}
 
-{# temporary fix, until https://github.com/symfony/symfony/pull/9347 is merged in #}
+{# temporary fixes, until https://github.com/symfony/symfony/pull/9347 is merged in #}
 <style>
 .sf-toolbar-block .sf-toolbar-icon > a,
 .sf-toolbar-block .sf-toolbar-icon > span {
     font-weight: normal;
+}
+
+.sf-toolbar-block .sf-toolbar-icon > a[href]:after {
+    content: "";
+}
+
+@media print {
+    .sf-toolbar {
+        display: none;
+        visibility: hidden;
+    }
 }
 </style>
     {% set icon %}
@@ -23,40 +34,24 @@
 
     {% set text %}
 
-        <span>
+        <div class="sf-toolbar-info-piece">
 
             <strong>Bolt - </strong> {{ collector.payoff }}<br>
 
             {{ collector.fullversion }} - {{ collector.aboutlink|raw }} - Visit <a href="http://bolt.cm" target="_blank">Bolt.cm</a></strong> <br>
 
-
             {% if collector.branding is not empty %}
                 {{ collector.branding|raw }}
             {% endif %}
 
-            <hr>
+        </div>
 
-        </span>
-
-        {% if collector.chosentemplate is not empty %}
+        {% if collector.editlink %}
         <div class="sf-toolbar-info-piece">
-            <b>Primary template:</b>
-                <span>{{ collector.chosentemplate }}
-                    {% if collector.templateerror is not empty %}
-                        {{ collector.templateerror }}
-                    {% endif %}
-                </span>
+            <hr style="margin: 0;">
+            Edit: <a href="{{ collector.editlink }}">{{ collector.edittitle|excerpt(40)|default("(no title)") }}</a>
         </div>
         {% endif %}
-
-        <div class="sf-toolbar-info-piece">
-            <b>Used templates:</b>
-                <span>
-                    {% for template in collector.templates %}
-                        {{loop.index }}. {{template}}<br>
-                    {% endfor %}
-                </span>
-        </div>
 
 
     {% endset %}

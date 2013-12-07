@@ -19,14 +19,14 @@ class Config
     {
         $this->app = $app;
 
-        $this->reservedfieldnames = array('id', 'slug', 'datecreated', 'datechanged', 'datepublish', 'datedepublish', 'username', 'status');
+        $this->reservedfieldnames = array('id', 'slug', 'datecreated', 'datechanged', 'datepublish', 'datedepublish', 'username', 'status', 'link');
 
         if (!$this->loadCache()) {
             $this->getConfig();
             $this->saveCache();
 
             // if we have to reload the config, we will also want to make sure the DB integrity is checked.
-            $this->app['session']->set('database_checked', 0);
+            \Bolt\Database\IntegrityChecker::invalidate();
         }
 
         $this->setTwigPath();
@@ -203,11 +203,16 @@ class Config
                 $options = array();
                 foreach ($config['taxonomy'][$key]['options'] as $optionkey => $value) {
                     if (is_numeric($optionkey)) {
-                        $optionkey = strtolower(safeString($value));
+                        $optionkey = makeSlug($value); // was: strtolower(safeString($value));
                     }
                     $options[$optionkey] = $value;
                 }
                 $config['taxonomy'][$key]['options'] = $options;
+            }
+
+            // If taxonomy is like tags, set 'tagcloud' to true by default.
+            if ( ($config['taxonomy'][$key]['behaves_like'] == "tags") && (!isset($config['taxonomy'][$key]['tagcloud'])) ) {
+                $config['taxonomy'][$key]['tagcloud'] = true;
             }
 
         }
@@ -231,10 +236,26 @@ class Config
             $tempfields = $temp['fields'];
             $temp['fields'] = array();
             foreach ($tempfields as $key => $value) {
+                // Fix name 'keys' for fields
                 $key = str_replace("-", "_", strtolower(safeString($key, true)));
                 $temp['fields'][$key] = $value;
+
+                // If field is a "file" type, make sure the 'extensions' are set, and it's an array.
+                if ($temp['fields'][$key]['type'] == "file") {
+
+                    if (empty($temp['fields'][$key]['extensions'])) {
+                        $temp['fields'][$key]['extensions'] = array('pdf', 'txt', 'md', 'doc', 'docx', 'zip', 'tgz');
+                    }
+
+                    if (!is_array($temp['fields'][$key]['extensions'])) {
+                        $temp['fields'][$key]['extensions'] = array($temp['fields'][$key]['extensions']);
+                    }
+
+                }
+
             }
 
+            // Make sure the 'uses' of the slug is an array.
             if (isset($temp['fields']['slug']) && isset($temp['fields']['slug']['uses']) &&
                 !is_array($temp['fields']['slug']['uses'])
             ) {
@@ -262,15 +283,7 @@ class Config
      */
     public function checkConfig()
     {
-        // Check DB-tables integrity
-        if ($this->app['storage']->getIntegrityChecker()->needsCheck()) {
-            if (count($this->app['storage']->getIntegrityChecker()->checkTablesIntegrity()) > 0) {
-                $msg = __("The database needs to be updated / repaired. Go to 'Settings' > 'Check Database' to do this now.");
-                $this->app['session']->getFlashBag()->set('error', $msg);
 
-                return;
-            }
-        }
 
         $slugs = array();
 
@@ -291,6 +304,15 @@ class Config
             //
             foreach ($ct['fields'] as $fieldname => $field) {
 
+                // Verify that the contenttype doesn't try to add fields that are reserved.
+                if ($fieldname != "slug" && in_array($fieldname, $this->reservedfieldnames)) {
+                    $error = __("In the contenttype for '%contenttype%', the field '%field%' is defined, which is a reserved name. Please edit contenttypes.yml, and correct this.",
+                        array('%contenttype%' => $key, '%field%' => $fieldname)
+                    );
+                    $this->app['session']->getFlashBag()->set('error', $error);
+                    return;
+                }
+
                 // Check 'uses'. If it's an array, split it up, and check the separate parts. We also need to check
                 // for the fields that are always present, like 'id'.
                 if (is_array($field) && !empty($field['uses'])) {
@@ -300,6 +322,7 @@ class Config
                                 array('%contenttype%' => $key, '%field%' => $fieldname, '%uses%' => $useField)
                             );
                             $this->app['session']->getFlashBag()->set('error', $error);
+                            return;
                         }
                     }
                 }
@@ -349,7 +372,19 @@ class Config
 
         }
 
-        // Sanity checks for taxomy.yml
+        // Check DB-tables integrity
+        if ($this->app['storage']->getIntegrityChecker()->needsCheck()) {
+            if (count($this->app['storage']->getIntegrityChecker()->checkTablesIntegrity()) > 0) {
+                $msg = __(
+                    "The database needs to be updated / repaired. Go to 'Settings' > '<a href=\"%link%\">Check Database</a>' to do this now.",
+                    array("%link%" => path('dbcheck'))
+                );
+                $this->app['session']->getFlashBag()->set('error', $msg);
+                return;
+            }
+        }
+
+        // Sanity checks for taxonomy.yml
         foreach ($this->data['taxonomy'] as $key => $taxo) {
 
             // Show some helpful warnings if slugs or keys are not set correctly.
@@ -358,6 +393,7 @@ class Config
                     array('%taxonomytype%' => $key, '%slug%' => $taxo['slug'])
                 );
                 $this->app['session']->getFlashBag()->set('error', $error);
+                return;
             }
 
         }
@@ -370,12 +406,14 @@ class Config
                         array('%slug%' => $slug)
                     );
                     $this->app['session']->getFlashBag()->set('error', $error);
+                    return;
                 }
             }
         }
 
         // Check the setting for crypto_rng..
-        $this->checkRNGSetting();
+        // Commented out for now, until we've got the new random number generator.
+        // $this->checkRNGSetting();
 
     }
 
@@ -422,6 +460,7 @@ class Config
             'debug' => false,
             'debug_show_loggedoff' => false,
             'debug_error_level' => 6135, // equivalent to E_ALL &~ E_NOTICE &~ E_DEPRECATED &~ E_USER_DEPRECATED
+            'debug_enable_whoops' => true,
             'strict_variables' => false,
             'theme' => "default",
             'debug_compressjs' => true,
@@ -429,10 +468,10 @@ class Config
             'listing_template' => 'listing.twig',
             'listing_records' => '5',
             'listing_sort' => 'datepublish DESC',
+            'crypto_rng' => 'mt_rand',
             'wysiwyg' => array(
                 'images' => true,
                 'tables' => false,
-                'embed' => false,
                 'fontcolor' => false,
                 'align' => false,
                 'subsuper' => false,
@@ -455,7 +494,6 @@ class Config
             ),
             'canonical' => !empty($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : "",
             'developer_notices' => false,
-            'crypto_rng' => "mt_rand",
             'cookies_use_remoteaddr' => true,
             'cookies_use_browseragent' => false,
             'cookies_use_httphost' => true,

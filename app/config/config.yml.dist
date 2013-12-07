@@ -18,7 +18,7 @@ theme: base-2013
 # The locale that'll be used by the application. If no locale is set the
 # fallback locale is 'en_GB'. For available options, see: http://docs.bolt.cm/locales
 locale: en_GB
-#timezone: Zulu
+#timezone: UTC
 
 # Set maintenance mode true or false
 # While in maintenance mode, only users of level editor or higher can access the site.
@@ -95,6 +95,7 @@ thumbnails:
   cropping: crop
   notfound_image: view/img/default_notfound.png
   error_image: view/img/default_error.png
+  save_files: false
 
 # If you want to 'brand' the Bolt backend for a client, you can change some key variables
 # here, that determine the name of the backend, and adds a primary support/contact link
@@ -116,6 +117,7 @@ developer_notices: false
 debug_show_loggedoff: false
 debug_error_level: 6135 # equivalent to E_ALL &~ E_NOTICE &~ E_DEPRECATED &~ E_USER_DEPRECATED
 #debug_error_level: 30719 # equivalent to E_ALL
+debug_enable_whoops: true # change this to false to use PHP's built-in error handling instead of Whoops
 
 # Use strict variables. This will make Bolt complain if you use {{ foo }},
 # when foo doesn't exist.
@@ -164,7 +166,15 @@ crypto_rng: mt_rand
 cookies_use_remoteaddr: true
 cookies_use_browseragent: false
 cookies_use_httphost: true
-cookies_https_only: false # note: this is on the TODO list.
+
+# Set the SECURE flag on session and authentication cookies. This will keep
+# most browsers from transmitting sessions cookies over an unencrypted
+# connection (e.g. when editing the site over HTTPS and at the same time
+# viewing it over HTTP).
+# NOTE: This setting only makes sense when you have actually set up HTTPS for
+# your Bolt site; if you do, you probably want to combine this flag with the
+# enforce_ssl option to avoid non-SSL requests to the backend altogether.
+cookies_https_only: false
 
 # The length of time a user stays 'logged in'. Change to 0 to end the session when the browser
 # is closed. The default is 1209600: two weeks in seconds.
@@ -180,7 +190,29 @@ cookies_domain:
 # '12' is better.
 hash_strength: 10
 
+# Enforce SSL: if set, all but the front-end pages will enforce an SSL
+# connection (and redirect to HTTPS if you attempt to visit the backend over
+# plain HTTP).
+# NOTE: if you set this, you probably also want to set the cookies_https_only
+# option; without it, users can still be tricked into sending session cookies
+# over plain HTTP, which could allow a MITM attacker to hijack their sessions.
+# enforce_ssl: true
+
+# If configured, Bolt will trust X-Forwarded-XXX headers from the listed IP
+# addresses and ranges when determining whether the current request is
+# 'secure'.
+# This is required to correctly determine the current hostname and protocol
+# (HTTP vs. HTTPS) when running behind some proxy, e.g. a load balancer, cache,
+# or SSL proxy.
+# List the IP addresses or subnets that you know are such proxies. Note that
+# allowing hosts here that may not be trusted proxies is a security risk.
+# If you do not understand what this does, it is probably best to not touch it.
+# trustProxies:
+#     - 127.0.0.1
+#     - 10.0.0.0/8
+
 # If you want Bolt installation get news through a proxy
+
 #httpProxy:
 #  host: my.proxy.server
 #  user: usr

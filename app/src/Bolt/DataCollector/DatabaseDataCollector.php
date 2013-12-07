@@ -1,6 +1,6 @@
 <?php
 
-namespace Bolt\Database;
+namespace Bolt\DataCollector;
 
 use Doctrine\DBAL\Logging\DebugStack;
 use Symfony\Component\HttpFoundation\Request;
@@ -17,7 +17,7 @@ class DatabaseDataCollector extends DataCollector
     private $logger;
 
     protected $data;
-    
+
     public function __construct(DebugStack $logger)
     {
         $this->logger = $logger;
@@ -32,32 +32,32 @@ class DatabaseDataCollector extends DataCollector
     public function collect(Request $request, Response $response, \Exception $exception = null)
     {
         $this->data = array(
-            'queries' => $this->logger->queries,
+            'queries' => $this->trim($this->logger->queries)
         );
     }
 
     public function getQueryCount()
     {
-        return count($this->trim($this->data['queries']));
+        return count($this->data['queries']);
     }
 
     public function getQueries()
     {
-        return $this->trim($this->data['queries']);
+        return $this->data['queries'];
     }
 
     public function getTime()
     {
         $time = 0;
-        foreach ($this->trim($this->data['queries']) as $query) {
+        foreach ($this->data['queries'] as $query) {
             $time += $query['executionMS'];
         }
 
         return $time;
     }
-    
+
     private function trim(array $queries)
-    {   
+    {
         $return = array();
         foreach ($queries as $query)
         {
@@ -71,8 +71,8 @@ class DatabaseDataCollector extends DataCollector
             }
             $return[] = $query;
         }
-        
+
         return $return;
     }
-    
+
 }

@@ -55,10 +55,22 @@ class Async implements ControllerProviderInterface
             ->assert('path', '.+')
             ->bind('asyncbrowse');
 
+        $ctr->post("/deletefile", array($this, 'deletefile'))
+            ->before(array($this, 'before'))
+            ->bind('deletefile');
+
         $ctr->get("/addstack/{filename}", array($this, 'addstack'))
             ->before(array($this, 'before'))
             ->assert('filename', '.*')
             ->bind('addstack');
+
+        $ctr->get("/tags/{taxonomytype}", array($this, 'tags'))
+            ->before(array($this, 'before'))
+            ->bind('tags');
+
+        $ctr->get("/populartags/{taxonomytype}", array($this, 'populartags'))
+            ->before(array($this, 'before'))
+            ->bind('populartags');
 
         $ctr->get("/showstack", array($this, 'showstack'))
             ->before(array($this, 'before'))
@@ -143,11 +155,9 @@ class Async implements ControllerProviderInterface
     {
         $term = $request->get('term');
 
-        $ext = $request->query->get('ext');
-        if (empty($ext)) {
+        $extensions = $request->query->get('ext');
+        if (empty($extensions)) {
             $extensions = 'jpg,jpeg,gif,png';
-        } else {
-            $extensions = $request->query->get('extensions');
         }
 
         $files = findFiles($term, $extensions);
@@ -179,8 +189,7 @@ class Async implements ControllerProviderInterface
         $readme = file_get_contents($filename);
 
         // Parse the field as Markdown, return HTML
-        $markdownParser = new \dflydev\markdown\MarkdownParser();
-        $html = $markdownParser->transformMarkdown($readme);
+        $html = \Parsedown::instance()->parse($readme);
 
         return new Response($html, 200, array('Cache-Control' => 's-maxage=180, public'));
 
@@ -210,7 +219,46 @@ class Async implements ControllerProviderInterface
         $uri = $app['storage']->getUri($request->query->get('title'), $request->query->get('id'), $request->query->get('contenttypeslug'), $request->query->get('fulluri'));
 
         return $uri;
+    }
 
+
+    public function tags(Silex\Application $app, $taxonomytype)
+    {
+        $prefix = $app['config']->get('general/database/prefix', "bolt_");
+
+        // \util::var_dump($taxonomytype);
+        $query = "select distinct `%staxonomy`.`slug` from `%staxonomy` where `taxonomytype` = ? order by `slug` asc;";
+        $query = sprintf($query, $prefix, $prefix);
+        $query = $app['db']->executeQuery($query, array($taxonomytype));
+
+        $results = $query->fetchAll();
+        return $app->json($results);
+    }
+
+    public function populartags(Silex\Application $app, $taxonomytype)
+    {
+        $prefix = $app['config']->get('general/database/prefix', "bolt_");
+
+        $limit = $app['request']->get('limit', 20);
+
+        $query = "select `slug` , count(`slug`) as `count` from  `%staxonomy` where `taxonomytype` = ? group by  `slug` order by `count` desc limit %s";
+        $query = sprintf($query, $prefix, intval($limit));
+        $query = $app['db']->executeQuery($query, array($taxonomytype));
+
+
+        $results = $query->fetchAll();
+
+        usort($results, function($a, $b){
+
+            if ($a['slug'] == $b['slug']) {
+                return 0;
+            }
+            return ($a['slug'] < $b['slug']) ? -1 : 1;    
+
+        });
+
+
+        return $app->json($results);
     }
 
 
@@ -399,6 +447,30 @@ class Async implements ControllerProviderInterface
 
     }
 
+
+     /**
+     * Delete a file on the server.
+     *
+     * @param  Silex\Application $app
+     * @param  Request           $request
+     * @return bool
+     */
+    public function deletefile(Silex\Application $app, Request $request)
+    {
+        $filename = $request->request->get('filename');
+
+        $filePath = BOLT_PROJECT_ROOT_DIR . '/' . $filename;
+
+        // TODO: ensure that we are deleting a file inside /files folder
+
+        if( is_file($filePath) && is_readable($filePath) ) {
+            @unlink($filePath);
+            return true;
+        } else {
+            return false;
+        }
+
+    }
 
     public function addstack($filename = "", Silex\Application $app)
     {

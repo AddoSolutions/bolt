@@ -19,14 +19,14 @@ class Extension extends \Bolt\BaseExtension
 
         $data = array(
             'name' => "ImportWXR",
-            'description' => "Een importfilter voor 'het oude CMS'.",
+            'description' => "An Import filter for WXR files, as created by Wordpress or PivotX",
             'author' => "Bob den Otter",
             'link' => "http://www.twokings.nl",
-            'version' => "0.9",
+            'version' => "0.9.1",
             'required_bolt_version' => "1.1",
-            'highest_bolt_version' => "1.1",
+            'highest_bolt_version' => "1.4",
             'type' => "Import",
-            'first_releasedate' => "2013-05-21",
+            'first_releasedate' => "2013-11-17",
             'latest_releasedate' => "2013-05-21"
         );
 
@@ -65,7 +65,7 @@ class Extension extends \Bolt\BaseExtension
 
             case "start":
                 if (empty($file) || !is_readable($file)) {
-                    $output . "<p>File $filename doesn't exist. Correct this in <code>app/extensions/ImportWXR/config.yml</code>, and refresh this page.</p>";
+                    $output .= "<p>File $filename doesn't exist. Correct this in <code>app/extensions/ImportWXR/config.yml</code>, and refresh this page.</p>";
                 } else {
 
                     $output .= sprintf("<p>File <code>%s</code> selected for import.</p>", $this->config['file']);

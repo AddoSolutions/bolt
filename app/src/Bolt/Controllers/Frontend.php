@@ -28,16 +28,16 @@ class Frontend
         $app['htmlsnippets'] = true;
 
         // If we are in maintenance mode and current user is not logged in, show maintenance notice.
+        // @see /app/app.php, $app->error()
         if ($app['config']->get('general/maintenance_mode')) {
-
             $user = $app['users']->getCurrentUser();
-            $template = $app['config']->get('general/maintenance_template');
-            $body = $app['twig']->render($template);
-
             if ($user['userlevel'] < 2) {
+                $template = $app['config']->get('general/maintenance_template');
+                $body = $app['twig']->render($template);
                 return new Response($body, 503);
             }
         }
+
     }
 
     public static function homepage(Silex\Application $app)
@@ -45,6 +45,12 @@ class Frontend
         if ($app['config']->get('general/homepage_template')) {
             $template = $app['config']->get('general/homepage_template');
             $content = $app['storage']->getContent($app['config']->get('general/homepage'));
+
+            // Set the 'editlink', if $content contains a valid record.
+            if (!empty($content->contenttype['slug'])) {
+                $app['editlink'] = path('editcontent', array('contenttypeslug' => $content->contenttype['slug'], 'id' => $content->id));
+                $app['edittitle'] = $content->getTitle();
+            }
 
             if (is_array($content)) {
                 $first = current($content);
@@ -109,6 +115,7 @@ class Frontend
         $app['canonicalpath'] = $content->link();
         $app['paths'] = getPaths($app);
         $app['editlink'] = path('editcontent', array('contenttypeslug' => $contenttype['slug'], 'id' => $content->id));
+        $app['edittitle'] = $content->getTitle();
 
         // Make sure we can also access it as {{ page.title }} for pages, etc. We set these in the global scope,
         // So that they're also available in menu's and templates rendered by extensions.
@@ -199,8 +206,6 @@ class Frontend
             $app->abort(404, $error);
         }
 
-        // $app['editlink'] = path('editcontent', array('contenttypeslug' => $contenttypeslug, 'id' => $content->id));
-
         // Make sure we can also access it as {{ pages }} for pages, etc. We set these in the global scope,
         // So that they're also available in menu's and templates rendered by extensions.
         $app['twig']->addGlobal('records', $content);
@@ -253,8 +258,6 @@ class Frontend
             $app['log']->setValue('templateerror', $error);
             $app->abort(404, $error);
         }
-
-        // $app['editlink'] = path('editcontent', array('contenttypeslug' => $contenttypeslug, 'id' => $content->id));
 
         $app['twig']->addGlobal('records', $content);
         $app['twig']->addGlobal('slug', $slug);
